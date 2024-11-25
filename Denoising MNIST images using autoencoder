@@ -1,0 +1,108 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.models import Model
+from tensorflow.keras.layers import Input, Conv2D, Conv2DTranspose
+from tensorflow.keras.optimizers import Adam
+
+# Load MNIST dataset
+(x_train_full, y_train_full), (x_test_full, y_test_full) = mnist.load_data()
+
+# Define the digits to select (e.g., 2, 5, 9)
+selected_digits = [2, 5, 9]
+
+# Filter the dataset for the selected digits
+train_mask = np.isin(y_train_full, selected_digits)
+test_mask = np.isin(y_test_full, selected_digits)
+
+x_train = x_train_full[train_mask]
+y_train = y_train_full[train_mask]
+x_test = x_test_full[test_mask]
+y_test = y_test_full[test_mask]
+
+# Normalize the data to [0, 1]
+x_train = x_train / 255.0
+x_test = x_test / 255.0
+
+# Reshape the data to include the channel dimension
+x_train = x_train.reshape(-1, 28, 28, 1)
+x_test = x_test.reshape(-1, 28, 28, 1)
+
+# Define noise factor
+noise_factor = 0.3
+
+# Add Gaussian noise to the images
+x_train_noisy = x_train + noise_factor * np.random.normal(loc=0.0, scale=1.0, size=x_train.shape)
+x_test_noisy = x_test + noise_factor * np.random.normal(loc=0.0, scale=1.0, size=x_test.shape)
+
+# Clip the values to ensure they are in the range [0, 1]
+x_train_noisy = np.clip(x_train_noisy, 0., 1.)
+x_test_noisy = np.clip(x_test_noisy, 0., 1.)
+
+# Input layer
+input_img = Input(shape=(28, 28, 1))
+
+# Encoder
+x = Conv2D(32, (2, 2), activation='relu', padding='same')(input_img)
+x = Conv2D(64, (2, 2), activation='relu', padding='same', strides=(2, 2))(x)
+x = Conv2D(64, (2, 2), activation='relu', padding='same', strides=(2, 2))(x)
+latent = Conv2D(128, (2, 2), activation='relu', padding='same')(x)
+
+# Decoder
+x = Conv2DTranspose(64, (2, 2), activation='relu', padding='same', strides=(2, 2))(latent)
+x = Conv2DTranspose(64, (2, 2), activation='relu', padding='same', strides=(2, 2))(x)
+decoded = Conv2DTranspose(1, (2, 2), activation='relu', padding='same')(x)
+
+# Compile the model
+autoencoder = Model(input_img, decoded)
+autoencoder.compile(optimizer=Adam(learning_rate=0.001), loss='mse', metrics = ['accuracy'])
+
+# Print model summary
+autoencoder.summary()
+
+# Train the Autoencoder
+history = autoencoder.fit(
+    x_train_noisy, x_train,
+    epochs=20,
+    batch_size=128,
+    validation_split=0.2,
+    verbose=1
+)
+
+# Evaluate and Visualize Results
+# Predict on the noisy test data
+decoded_imgs = autoencoder.predict(x_test_noisy)
+
+# Plot training and validation loss
+plt.subplot(2,1,1)
+plt.plot( history.history['loss'], label = 'loss')
+plt.plot( history.history['val_loss'], label = 'val_loss')
+plt.legend(loc = 'best')
+plt.subplot(2,1,2)
+plt.plot( history.history['accuracy'], label = 'accuracy')
+plt.plot( history.history['val_accuracy'], label = 'val_accuracy')
+plt.legend(loc = 'best')
+plt.show()
+
+# Visualize original, noisy, and denoised images
+n = 10
+plt.figure(figsize=(20, 6))
+for i in range(n):
+    # Original images
+    ax = plt.subplot(3, n, i + 1)
+    plt.imshow(x_test[i].reshape(28, 28), cmap='gray')
+    plt.title(f"Original {y_test[i]}")
+    plt.axis('off')
+
+    # Noisy images
+    ax = plt.subplot(3, n, i + 1 + n)
+    plt.imshow(x_test_noisy[i].reshape(28, 28), cmap='gray')
+    plt.title(f"Noisy {y_test[i]}")
+    plt.axis('off')
+
+    # Denoised images
+    ax = plt.subplot(3, n, i + 1 + 2 * n)
+    plt.imshow(decoded_imgs[i].reshape(28, 28), cmap='gray')
+    plt.title(f"Denoised {y_test[i]}")
+    plt.axis('off')
+plt.show()
